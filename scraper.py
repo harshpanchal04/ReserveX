@@ -2,6 +2,7 @@ import logging
 from playwright.sync_api import sync_playwright
 import time
 import json
+import os
 
 # Configure logging
 logging.basicConfig(
@@ -31,13 +32,22 @@ def launch_browser(p, headless=True):
 
     # Fake Headless Strategy
     # We force headless=False (which we know works) but hide the window
-    if headless:
+    # Production Environment Check
+    is_production = os.environ.get("ENV") == "production"
+    
+    # In Production, we MUST run headless (no display)
+    # We use the 'new' headless mode which is more stealthy than the old one
+    if is_production:
+        actual_headless = True 
+        args.append("--headless=new")
+    elif headless:
+        # Local Fake Headless (Headful but off-screen)
         actual_headless = False
-        args.append("--window-position=-10000,-10000") # Move off-screen
+        args.append("--window-position=-10000,-10000")
     else:
+        # Local Headful (Visible)
         actual_headless = False
-        args.append("--window-position=50,50") # Visible position
-
+        args.append("--window-position=50,50")
     browser = p.chromium.launch(headless=actual_headless, args=args)
     
     # Create context with real user agent and viewport
