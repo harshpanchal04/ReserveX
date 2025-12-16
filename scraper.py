@@ -55,6 +55,9 @@ def launch_browser(p, headless=True):
         });
     """)
     
+    # Resource blocking removed as requested
+
+    
     return browser, context
 
 def get_train_route(train_no, headless=True):
@@ -75,23 +78,38 @@ def get_train_route(train_no, headless=True):
             
             # Input Train Number
             try:
-                page.locator("label").filter(has_text="Train Name/Number").first.click()
-            except:
-                page.locator("input[aria-autocomplete='list']").first.click()
-            
-            page.wait_for_timeout(500)
-            page.keyboard.type(train_no, delay=100)
+                # Force click the input to bypass overlays
+                train_input = page.locator("input[role='combobox']").first
+                if not train_input.is_visible():
+                     train_input = page.locator("input[aria-autocomplete='list']").first
+                
+                # Use force=True to bypass the "Train Name/Number*" label overlay
+                train_input.click(force=True)
+                page.wait_for_timeout(200)
+                train_input.fill(train_no)
+                page.wait_for_timeout(500)
+                
+                # Check if value was entered
+                if train_input.input_value() != train_no:
+                    logging.warning("Input fill failed, trying force...")
+                    train_input.evaluate(f"el => el.value = '{train_no}'")
+                    train_input.type(" ") # Trigger event
+            except Exception as e:
+                logging.warning(f"Train input interaction failed: {e}")
             
             # Wait for dropdown options to appear
             try:
+                # Wait for options
                 page.wait_for_selector("li[role='option']", timeout=5000)
-            except:
-                logging.warning("Dropdown options did not appear in time.")
-
-            page.wait_for_timeout(500)
-            page.keyboard.press("ArrowDown")
-            page.wait_for_timeout(500)
-            page.keyboard.press("Enter")
+                
+                # Click the first option explicitly with force
+                option = page.locator("li[role='option']").first
+                option.click(force=True)
+                logging.info(f"Clicked option: {option.inner_text()}")
+            except Exception as e:
+                logging.warning(f"Dropdown selection failed: {e}")
+                # Fallback: Try pressing Enter if click failed
+                page.keyboard.press("Enter")
             
             logging.info("Train selected. Waiting for Schedule button...")
             page.wait_for_timeout(2000)
@@ -132,8 +150,24 @@ def get_train_route(train_no, headless=True):
                         "ET": 1582, "BPL": 1674, "BINA": 1812, "VGLJ": 1965, "GWL": 2062,
                         "AGC": 2180, "MTJ": 2234, "NZM": 2368, "NDLS": 2375
                     }
+                    fallback_names = {
+                        "SBC": "KSR BENGALURU", "BNC": "BENGALURU CANT", "BNCE": "BENGALURU EAST", 
+                        "KJM": "KRISHNARAJAPURM", "YNK": "YELHANKA JN", "DBU": "DODBALLAPUR",
+                        "GBD": "GAURIBIDANUR", "HUP": "HINDUPUR", "PKD": "PENUKONDA",
+                        "SSPN": "SAI P NILAYAM", "DMM": "DHARMAVARAM JN", "ATP": "ANANTAPUR",
+                        "GY": "GOOTY JN", "GTL": "GUNTAKAL JN", "AD": "ADONI",
+                        "RC": "RAICHUR", "YG": "YADGIR", "WADI": "WADI",
+                        "KLBG": "KALABURAGI", "SUR": "SOLAPUR JN", "KWV": "KURDUVADI",
+                        "DD": "DAUND JN", "ANG": "AHMADNAGAR", "BAP": "BELAPUR",
+                        "KPG": "KOPARGAON", "MMR": "MANMAD JN", "JL": "JALGAON JN",
+                        "BSL": "BHUSAVAL JN", "BAU": "BURHANPUR", "KNW": "KHANDWA",
+                        "ET": "ITARSI JN", "BPL": "BHOPAL JN", "BINA": "BINA JN",
+                        "VGLJ": "V LAKSHMIBAIJHS", "GWL": "GWALIOR", "AGC": "AGRA CANTT",
+                        "MTJ": "MATHURA JN", "NZM": "H NIZAMUDDIN", "NDLS": "NEW DELHI"
+                    }
                     for code, dist in fallback_map.items():
-                        station_list.append({"code": code, "name": code, "dist": dist})
+                        name = fallback_names.get(code, code)
+                        station_list.append({"code": code, "name": name, "dist": dist})
                 
         except Exception as e:
             logging.error(f"Error in get_train_route: {e}")
@@ -164,52 +198,76 @@ def scan_vacancies(train_no, journey_date, boarding_stn_code, headless=True, pro
             
             # --- Input Train ---
             try:
-                page.locator("label").filter(has_text="Train Name/Number").first.click()
-            except:
-                page.locator("input[aria-autocomplete='list']").first.click()
+                # Force click the input to bypass overlays
+                train_input = page.locator("input[role='combobox']").first
+                if not train_input.is_visible():
+                     train_input = page.locator("input[aria-autocomplete='list']").first
+                
+                # Use force=True to bypass the "Train Name/Number*" label overlay
+                train_input.click(force=True)
+                page.wait_for_timeout(200)
+                train_input.fill(train_no)
+                page.wait_for_timeout(500)
+                
+                # Check if value was entered
+                if train_input.input_value() != train_no:
+                    logging.warning("Input fill failed, trying force...")
+                    train_input.evaluate(f"el => el.value = '{train_no}'")
+                    train_input.type(" ") # Trigger event
+            except Exception as e:
+                logging.warning(f"Train input interaction failed: {e}")
             
-            page.wait_for_timeout(500)
-            page.keyboard.type(train_no, delay=100)
-            page.wait_for_timeout(2000)
-            page.keyboard.press("ArrowDown")
-            page.wait_for_timeout(500)
-            page.keyboard.press("Enter")
-            page.wait_for_timeout(2000)
+            # Wait for dropdown options
+            try:
+                # Wait for options
+                page.wait_for_selector("li[role='option']", timeout=5000)
+                
+                # Click the first option explicitly with force
+                option = page.locator("li[role='option']").first
+                option.click(force=True)
+            except Exception as e:
+                logging.warning(f"Dropdown selection failed: {e}")
+                page.keyboard.press("Enter")
+            
+            page.wait_for_timeout(1000)
 
             # --- Select Boarding Station ---
             logging.info(f"Selecting Boarding Station: {boarding_stn_code}")
             try:
-                page.locator("label").filter(has_text="Boarding Station").first.click()
-            except:
-                page.locator("input[aria-autocomplete='list']").nth(1).click()
-            
-            page.wait_for_timeout(500)
-            page.keyboard.type(boarding_stn_code, delay=100)
-            
-            # Wait for dropdown options
-            try:
+                # Force click boarding station input
+                boarding_input = page.locator("input[aria-autocomplete='list']").nth(1)
+                boarding_input.click(force=True)
+                page.wait_for_timeout(200)
+                boarding_input.fill(boarding_stn_code)
+                
+                # Wait for dropdown options
                 page.wait_for_selector("li[role='option']", timeout=5000)
-            except:
-                logging.warning("Boarding station dropdown options did not appear in time.")
+                
+                # Click first option
+                page.locator("li[role='option']").first.click(force=True)
+            except Exception as e:
+                logging.warning(f"Boarding station selection failed: {e}")
+                # Fallback
+                page.keyboard.press("ArrowDown")
+                page.keyboard.press("Enter")
 
-            page.wait_for_timeout(1000)
-            page.keyboard.press("ArrowDown")
             page.wait_for_timeout(500)
-            page.keyboard.press("Enter")
 
             # --- Select Date ---
             try:
                 date_input = page.locator("input.jss466").first
                 if not date_input.is_visible():
                      date_input = page.locator("input[placeholder*='Date']").first
-                date_input.click()
-                page.wait_for_timeout(1000)
+                
+                # Force click date input
+                date_input.click(force=True)
+                page.wait_for_timeout(500)
                 
                 day_locator = page.locator("button").filter(has_text=journey_day).first
                 if day_locator.is_visible():
-                    day_locator.click()
+                    day_locator.click(force=True)
                 else:
-                    page.locator(f"text='{journey_day}'").last.click()
+                    page.locator(f"text='{journey_day}'").last.click(force=True)
             except Exception as e:
                 logging.warning(f"UI Date selection failed: {e}")
 
@@ -230,7 +288,12 @@ def scan_vacancies(train_no, journey_date, boarding_stn_code, headless=True, pro
             # Force click to bypass any potential overlays
             get_chart_btn = page.locator("button:has-text('Get Train Chart')")
             get_chart_btn.click(force=True)
-            page.wait_for_url(lambda url: "vacant-berth" in url or "traincomposition" in url, timeout=45000)
+            
+            # Wait for URL change or error
+            try:
+                page.wait_for_url(lambda url: "vacant-berth" in url or "traincomposition" in url, timeout=15000)
+            except:
+                logging.warning("URL did not change, checking for errors...")
             
             # --- Scan Coaches ---
             try:

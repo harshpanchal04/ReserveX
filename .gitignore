@@ -1,0 +1,7 @@
+venv/
+__pycache__/
+*.log
+*.png
+vacancies_debug.json
+.env
+.DS_Store

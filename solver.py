@@ -1,8 +1,10 @@
 import pandas as pd
 
-def process_vacancies(raw_vacancies, station_map, start_code, end_code):
+def process_vacancies(raw_vacancies, station_map, start_code, end_code, berth_preferences=None, ac_only=False):
     """
-    Filters and enriches vacancy data based on user's journey.
+    Filters and enriches vacancy data based on user's journey and preferences.
+    berth_preferences: List of allowed berth codes (e.g., ['LB', 'SL']). If None/Empty, allow all.
+    ac_only: If True, only allow coaches that are NOT Sleeper (S) or General/2S (D).
     """
     processed = []
     
@@ -19,6 +21,21 @@ def process_vacancies(raw_vacancies, station_map, start_code, end_code):
 
     for vac in raw_vacancies:
         try:
+            # 1. Berth Type Filter
+            if berth_preferences and vac.get("Type") not in berth_preferences:
+                continue
+
+            # 2. AC Only Filter
+            # AC Coaches usually start with B (3A), A (2A/1A), H (1A), M (3E), C (CC), E (Exec)
+            # Non-AC are S (Sleeper), D (2S/General), GS (General)
+            if ac_only:
+                coach = vac.get("Coach", "").upper()
+                if coach.startswith("S") or coach.startswith("D") or coach.startswith("G"):
+                    # Edge case: S1, S2... are Sleeper. 
+                    # But sometimes special trains have different codes. 
+                    # For standard IRCTC, S=Sleeper.
+                    continue
+
             vac_start_dist = station_map.get(vac["From"])
             vac_end_dist = station_map.get(vac["To"])
             
@@ -26,10 +43,6 @@ def process_vacancies(raw_vacancies, station_map, start_code, end_code):
                 continue
 
             # Check overlap with user journey
-            # We want segments that cover at least SOME part of the journey?
-            # Or strictly inside? 
-            # Let's say we want any segment that overlaps [start_dist, end_dist]
-            
             overlap_start = max(start_dist, vac_start_dist)
             overlap_end = min(end_dist, vac_end_dist)
             
@@ -56,39 +69,61 @@ def process_vacancies(raw_vacancies, station_map, start_code, end_code):
             
     return processed
 
-def find_seat_chain(processed_vacancies, station_map, start_code, end_code):
+def find_all_seat_chains(vacancies, station_map, start_code, end_code, limit=5):
     """
-    Finds a sequence of vacancies to cover the journey from start to end.
-    Uses a Greedy approach: At each step, pick the vacancy that extends the furthest.
-    This minimizes the number of swaps (segments).
+    Finds multiple valid seat chains to cover the journey.
+    Returns a list of chains (each chain is a list of vacancy dicts).
     """
     try:
         start_dist = station_map[start_code]
         end_dist = station_map[end_code]
-    except:
-        return None
+    except KeyError:
+        return []
 
-    current_dist = start_dist
-    chain = []
+    # Filter relevant vacancies
+    relevant = [v for v in vacancies if v['End_Dist'] > start_dist and v['Start_Dist'] < end_dist]
     
-    while current_dist < end_dist:
-        # Find all options that start at or before current_dist and end after current_dist
-        candidates = [
-            v for v in processed_vacancies 
-            if v['Start_Dist'] <= current_dist and v['End_Dist'] > current_dist
-        ]
+    # Identify potential starting seats (must cover the start station)
+    # A seat covers start if Start_Dist <= user_start and End_Dist > user_start
+    starting_seats = [v for v in relevant if v['Start_Dist'] <= start_dist and v['End_Dist'] > start_dist]
+    
+    # Sort starting seats by how far they go (greedy preference)
+    starting_seats.sort(key=lambda x: x['End_Dist'], reverse=True)
+    
+    valid_chains = []
+    seen_chains = set() # To avoid duplicates
+    
+    for first_seat in starting_seats:
+        chain = [first_seat]
+        current_seat = first_seat
         
-        if not candidates:
-            return None # Gap in coverage
+        while current_seat['End_Dist'] < end_dist:
+            # Find next seat that overlaps/connects and extends further
+            # Overlap requirement: Next Start <= Current End
+            # Extension requirement: Next End > Current End
+            candidates = [
+                v for v in relevant 
+                if v['Start_Dist'] <= current_seat['End_Dist'] 
+                and v['End_Dist'] > current_seat['End_Dist']
+            ]
             
-        # Greedy Choice: Pick the one that reaches the furthest distance
-        best_option = max(candidates, key=lambda x: x['End_Dist'])
+            if not candidates:
+                break # Dead end
+            
+            # Greedy: Pick the one that extends the furthest
+            best_next = max(candidates, key=lambda x: x['End_Dist'])
+            chain.append(best_next)
+            current_seat = best_next
+            
+        # Check if chain successfully reached the destination
+        if current_seat['End_Dist'] >= end_dist:
+            # Create a signature tuple to check for duplicates
+            chain_sig = tuple((s['Coach'], s['Berth']) for s in chain)
+            if chain_sig not in seen_chains:
+                valid_chains.append(chain)
+                seen_chains.add(chain_sig)
         
-        # If the best option doesn't make progress, we are stuck (shouldn't happen with strict > check)
-        if best_option['End_Dist'] <= current_dist:
-             return None
-
-        chain.append(best_option)
-        current_dist = best_option['End_Dist']
-        
-    return chain
+        if len(valid_chains) >= limit:
+            break
+            
+    return valid_chains
