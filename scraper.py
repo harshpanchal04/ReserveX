@@ -25,6 +25,8 @@ def launch_browser(p, headless=True):
         "--disable-blink-features=AutomationControlled",
         "--no-sandbox",
         "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage", # Stability for Docker
+        "--disable-http2",         # Fix for net::ERR_HTTP2_PROTOCOL_ERROR
         "--disable-infobars",
         "--ignore-certificate-errors",
         "--ignore-ssl-errors",
