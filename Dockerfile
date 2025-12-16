@@ -1,7 +1,7 @@
 # Use the official Playwright image which comes with Python and Browsers pre-installed
 # This avoids the "missing dependencies" nightmare on Linux
-FROM mcr.microsoft.com/playwright/python:v1.40.0-jammy
-
+# FROM mcr.microsoft.com/playwright/python:v1.40.0-jammy
+FROM mcr.microsoft.com/playwright/python:v1.57.0-jammy
 # Set working directory
 WORKDIR /app
 
