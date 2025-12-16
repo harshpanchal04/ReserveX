@@ -57,7 +57,14 @@ def launch_browser(p, headless=True):
         user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         viewport={"width": 1366, "height": 768},
         locale="en-US",
-        timezone_id="Asia/Kolkata"
+        timezone_id="Asia/Kolkata",
+        extra_http_headers={
+            "Accept-Language": "en-US,en;q=0.9",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Ch-Ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
+        }
     )
     
     # Stealth: Remove 'navigator.webdriver' property
@@ -85,8 +92,14 @@ def get_train_route(train_no, headless=True):
         page = context.new_page()
 
         try:
-            # Increased timeout and added wait_until='commit' to be less strict if load hangs
-            page.goto("https://www.irctc.co.in/online-charts/", timeout=60000, wait_until="domcontentloaded")
+            # Relaxed wait condition to 'commit' to bypass WAF tarpitting
+            page.goto("https://www.irctc.co.in/online-charts/", timeout=60000, wait_until="commit")
+            
+            # Manually wait for DOM content if needed, but rely on selectors mostly
+            try:
+                page.wait_for_load_state("domcontentloaded", timeout=10000)
+            except:
+                pass
             
             # Input Train Number
             try:
@@ -206,7 +219,12 @@ def scan_vacancies(train_no, journey_date, boarding_stn_code, headless=True, pro
         page = context.new_page()
 
         try:
-            page.goto("https://www.irctc.co.in/online-charts/", timeout=60000, wait_until="domcontentloaded")
+            # Relaxed wait condition
+            page.goto("https://www.irctc.co.in/online-charts/", timeout=60000, wait_until="commit")
+            try:
+                page.wait_for_load_state("domcontentloaded", timeout=10000)
+            except:
+                pass
             
             # --- Input Train ---
             try:
