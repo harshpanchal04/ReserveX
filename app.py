@@ -75,21 +75,7 @@ with st.sidebar:
         index=0
     )
 
-    st.markdown("---")
-    st.markdown("### ℹ️ How it Works")
-    with st.expander("See Technical Details"):
-        st.markdown("""
-        **1. Route Discovery:**
-        - Scrapes the official schedule to map station codes to distances (km).
-        
-        **2. Vacancy Scanning:**
-        - Uses **Playwright** to intercept internal APIs (`coachComposition`).
-        - Scans every coach (S1, S2, B1...) to find partial vacancies.
-        
-        **3. The 'Hacker' Algorithm:**
-        - **Single Seat:** Finds the longest continuous segment.
-        - **Seat Hopping:** Uses a **Greedy Algorithm** to chain vacancies together, minimizing seat swaps.
-        """)
+
 
 # --- Main Area ---
 
