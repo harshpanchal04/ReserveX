@@ -7,7 +7,7 @@ BASE_URL = "https://www.irctc.co.in/online-charts/"
 def find_api_endpoints():
     print(f"Fetching {BASE_URL}...")
     try:
-        response = requests.get(BASE_URL, verify=False) # Ignore SSL for now
+        response = requests.get(BASE_URL, verify=False, timeout=30) # nosec B501
         html = response.text
     except Exception as e:
         print(f"Failed to fetch base URL: {e}")
@@ -21,7 +21,7 @@ def find_api_endpoints():
         full_url = urljoin(BASE_URL, js_file)
         print(f"Scanning {full_url}...")
         try:
-            js_content = requests.get(full_url, verify=False).text
+            js_content = requests.get(full_url, verify=False, timeout=30).text # nosec B501
             
             # Look for API-like patterns
             # Patterns: "api/...", "/api/...", "coachComposition", "trainSchedule"

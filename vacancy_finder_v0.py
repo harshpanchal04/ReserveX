@@ -195,8 +195,8 @@ def main():
             # Wait for page to settle
             try:
                 page.wait_for_load_state("networkidle", timeout=10000)
-            except:
-                pass
+            except Exception as e:
+                logging.warning(f"Wait for load state failed: {e}")
             
             # Inspect all buttons to find coaches
             logging.info("Inspecting all buttons to find coaches...")
@@ -208,7 +208,8 @@ def main():
                     txt = btn.inner_text()
                     if len(txt) < 5 and any(c.isdigit() for c in txt):
                         coach_buttons.append(btn)
-                except:
+                except Exception as e:
+                    logging.warning(f"Error filtering button: {e}")
                     continue
             
             logging.info(f"Found {len(coach_buttons)} coach buttons.")

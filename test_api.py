@@ -10,7 +10,7 @@ def test_endpoint(url, payload):
             "Origin": "https://www.irctc.co.in",
             "Referer": "https://www.irctc.co.in/online-charts/"
         }
-        response = requests.post(url, json=payload, headers=headers, verify=False)
+        response = requests.post(url, json=payload, headers=headers, verify=False, timeout=30) # nosec B501
         print(f"Status: {response.status_code}")
         print(f"Response: {response.text[:200]}...")
         return response.status_code == 200

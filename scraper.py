@@ -308,8 +308,8 @@ def scan_vacancies(train_no, journey_date, boarding_stn_code, headless=True, pro
             # --- Scan Coaches ---
             try:
                 page.wait_for_load_state("networkidle", timeout=10000)
-            except:
-                pass
+            except Exception as e:
+                logging.warning(f"Wait for load state failed (non-critical): {e}")
 
             all_buttons = page.locator("button").all()
             coach_buttons = []
@@ -318,7 +318,8 @@ def scan_vacancies(train_no, journey_date, boarding_stn_code, headless=True, pro
                     txt = btn.inner_text()
                     if len(txt) < 5 and any(c.isdigit() for c in txt):
                         coach_buttons.append(btn)
-                except:
+                except Exception as e:
+                    logging.warning(f"Error inspecting button: {e}")
                     continue
             
             total_coaches = len(coach_buttons)
