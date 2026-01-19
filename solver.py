@@ -64,7 +64,10 @@ def process_vacancies(raw_vacancies, station_map, start_code, end_code, berth_pr
                     "Start_Dist": vac_start_dist,
                     "End_Dist": vac_end_dist
                 })
-        except Exception:
+        except Exception as e:
+            # Log the error but continue processing other vacancies
+            import logging
+            logging.error(f"Error processing vacancy: {e}")
             continue
             
     return processed

@@ -106,6 +106,7 @@ def main():
                                 dist_val = int(''.join(filter(str.isdigit, dist_text)))
                                 station_map[name_text] = dist_val
                             except Exception as e:
+                                logging.warning(f"Error parsing row: {e}")
                                 continue
 
                     logging.info(f"Loaded {len(station_map)} stations.")
