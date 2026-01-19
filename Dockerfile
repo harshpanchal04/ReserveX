@@ -5,11 +5,18 @@ FROM mcr.microsoft.com/playwright/python:v1.57.0-jammy
 # Set working directory
 WORKDIR /app
 
+# Upgrade system packages to fix OS-level vulnerabilities (e.g., gpg CVE-2025-68973)
+RUN apt-get update && apt-get upgrade -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
 # Copy requirements first to leverage Docker cache
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Upgrade pip and setuptools to fix Python dependency vulnerabilities (e.g., jaraco.context in setuptools)
+# Then install dependencies
+RUN pip install --no-cache-dir --upgrade pip setuptools && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application
 COPY . .
