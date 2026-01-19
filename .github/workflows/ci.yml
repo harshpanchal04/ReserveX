@@ -3,9 +3,9 @@ name: Advanced CI Pipeline
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ "master" ]
+    branches: [ "main" ]
   workflow_dispatch:
 
 env:
@@ -69,7 +69,7 @@ jobs:
           tags: ${{ env.DOCKER_IMAGE }}:${{ github.sha }}
 
       - name: Container Vulnerability Scan (Trivy)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@main
         with:
           image-ref: '${{ env.DOCKER_IMAGE }}:${{ github.sha }}'
           format: 'table'

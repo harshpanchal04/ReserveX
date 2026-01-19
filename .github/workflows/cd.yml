@@ -6,7 +6,7 @@ on:
     types:
       - completed
     branches:
-      - master
+      - main
   workflow_dispatch:
 
 env:
@@ -36,7 +36,7 @@ jobs:
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then IMAGE_TAG="latest"; fi
           
           # For workflow_run event, we might want to get the SHA from the triggering run, 
-          # but normally checkout@v3 checks out the HEAD of master which is what we built.
+          # but normally checkout@v3 checks out the HEAD of main which is what we built.
           
           echo "Deploying Staging: ${{ env.DOCKER_IMAGE }}:$IMAGE_TAG"
           
