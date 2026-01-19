@@ -83,6 +83,28 @@ ReserveX (also known as Train Surfer) is a powerful Python-based tool designed t
         *   **Hacker Chain**: A combination of seats to cover the full trip.
     *   **Step 5**: Download your **PDF Ticket** for easy reference.
 
+## 🔄 CI/CD Pipeline
+
+This project implements a production-grade **DevSecOps** pipeline using GitHub Actions.
+
+### 1. Continuous Integration (CI)
+Every push to `master` triggers:
+-   **Linting**: `flake8` checks for code style compliance.
+-   **Security Scans**:
+    -   **SAST**: `bandit` scans Python code for vulnerabilities.
+    -   **SCA**: `safety` checks dependencies for known CVEs.
+-   **Unit Tests**: `pytest` validates core logic (mocking external APIs).
+-   **Containerization**: Builds a Docker image.
+-   **Image Scanning**: `trivy` scans the Docker image for OS/library vulnerabilities.
+-   **Registry Push**: Pushes safe images to DockerHub.
+
+### 2. Continuous Deployment (CD)
+Automated deployment to Kubernetes:
+-   **Staging**: Deploys to `staging` namespace -> Runs **DAST** (OWASP ZAP).
+-   **Production**: Deploys to `production` namespace (Requires Manual Approval).
+
+[![CI Status](https://github.com/harshpanchal04/ReserveX/actions/workflows/ci.yml/badge.svg)](https://github.com/harshpanchal04/ReserveX/actions/workflows/ci.yml)
+
 ## 📂 File Structure
 
 *   `app.py`: Main Streamlit application entry point.

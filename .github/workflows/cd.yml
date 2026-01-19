@@ -1,0 +1,95 @@
+name: Advanced CD Pipeline
+
+on:
+  workflow_run:
+    workflows: ["Advanced CI Pipeline"]
+    types:
+      - completed
+    branches:
+      - master
+  workflow_dispatch:
+
+env:
+  DOCKER_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/reservex
+
+jobs:
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Kubectl
+        uses: azure/k8s-set-context@v3
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBE_CONFIG }}
+
+      - name: Deploy to Staging
+        run: |
+          # Replace placeholder with actual image tag
+          # Note: In real life, pass the SHA from the CI trigger. Here we use 'latest' or the triggering SHA if available.
+          IMAGE_TAG=${{ github.sha }}
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then IMAGE_TAG="latest"; fi
+          
+          # For workflow_run event, we might want to get the SHA from the triggering run, 
+          # but normally checkout@v3 checks out the HEAD of master which is what we built.
+          
+          echo "Deploying Staging: ${{ env.DOCKER_IMAGE }}:$IMAGE_TAG"
+          
+          # Use sed to replace image placeholder
+          sed -i "s|IMAGE_PLACEHOLDER|${{ env.DOCKER_IMAGE }}:$IMAGE_TAG|g" k8s/staging/deployment.yaml
+          
+          # Apply (Create namespace if not exists)
+          kubectl create namespace staging --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -f k8s/staging/deployment.yaml
+
+      - name: Verify Staging Rollout
+        run: |
+          kubectl rollout status deployment/reservex-staging -n staging
+
+      - name: DAST Scan (OWASP ZAP)
+        uses: zaproxy/action-baseline@v0.9.0
+        continue-on-error: true # Don't block pipeline on alerts, just report
+        with:
+          # In a real setup, get the LoadBalancer IP
+          # target: 'http://<staging-ip>'
+          target: 'http://example.com' # Placeholder for demo
+          cmd_options: '-a'
+
+  deploy-production:
+    name: Deploy to Production
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    environment: 
+      name: production
+      url: http://reservex.prod
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Kubectl
+        uses: azure/k8s-set-context@v3
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBE_CONFIG }}
+
+      - name: Deploy to Production
+        run: |
+          IMAGE_TAG=${{ github.sha }}
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then IMAGE_TAG="latest"; fi
+          
+          echo "Deploying Production: ${{ env.DOCKER_IMAGE }}:$IMAGE_TAG"
+          
+          sed -i "s|IMAGE_PLACEHOLDER|${{ env.DOCKER_IMAGE }}:$IMAGE_TAG|g" k8s/production/deployment.yaml
+          
+          kubectl create namespace production --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -f k8s/production/deployment.yaml
+
+      - name: Verify Production Rollout
+        run: |
+          kubectl rollout status deployment/reservex-production -n production

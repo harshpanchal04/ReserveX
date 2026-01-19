@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reservex-staging
+  namespace: staging
+  labels:
+    app: reservex
+    env: staging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: reservex
+      env: staging
+  template:
+    metadata:
+      labels:
+        app: reservex
+        env: staging
+    spec:
+      containers:
+      - name: reservex
+        image: IMAGE_PLACEHOLDER
+        ports:
+        - containerPort: 8501
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        env:
+        - name: ENV
+          value: "staging"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: reservex-service-staging
+  namespace: staging
+spec:
+  type: LoadBalancer
+  selector:
+    app: reservex
+    env: staging
+  ports:
+  - port: 80
+    targetPort: 8501

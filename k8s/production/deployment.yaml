@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reservex-production
+  namespace: production
+  labels:
+    app: reservex
+    env: production
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: reservex
+      env: production
+  template:
+    metadata:
+      labels:
+        app: reservex
+        env: production
+    spec:
+      containers:
+      - name: reservex
+        image: IMAGE_PLACEHOLDER
+        ports:
+        - containerPort: 8501
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        env:
+        - name: ENV
+          value: "production"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: reservex-service-prod
+  namespace: production
+spec:
+  type: LoadBalancer
+  selector:
+    app: reservex
+    env: production
+  ports:
+  - port: 80
+    targetPort: 8501
