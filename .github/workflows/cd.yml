@@ -95,6 +95,21 @@ jobs:
             # Wait for Rollout
             kubectl rollout status deployment/reservex-deployment --timeout=120s
             
+            # ----------------------------------------------------------------
+            # CRITICAL FIX: Expose Minikube Service to EC2 Host (0.0.0.0)
+            # Minikube Docker drive isolates the network. We must port-forward
+            # to make it accessible from the internet.
+            # ----------------------------------------------------------------
+            echo "🔌 Setting up Port Forwarding..."
+            # Kill any existing port-forward protocols on 30001 to prevent conflicts
+            pkill -f "kubectl port-forward" || true
+            
+            # Run port-forward in background (nohup) so it stays alive after SSH disconnects
+            nohup kubectl port-forward --address 0.0.0.0 service/reservex-service 30001:8501 > /dev/null 2>&1 &
+            
+            # Give it a moment to bind
+            sleep 5
+            
             # Verify Pods
             kubectl get pods -l app=reservex
             
