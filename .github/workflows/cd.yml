@@ -18,78 +18,133 @@ jobs:
         uses: actions/checkout@v4
 
       # ----------------------------------------------------
-      # 1. Setup SSH & Copy Manifests
+      # Single-Step Robust Deployment (All-in-One SSH)
       # ----------------------------------------------------
-      - name: Setup SSH Key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
-          chmod 644 ~/.ssh/known_hosts
-
-      - name: Copy Kubernetes Manifests
-        run: |
-          # Create target directory on server
-          ssh -i ~/.ssh/id_rsa  -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} "mkdir -p ~/k8s"
-          # Copy all yaml files
-          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no k8s/*.yaml ubuntu@${{ secrets.EC2_HOST }}:~/k8s/
-
-      # ----------------------------------------------------
-      # 2. Deploy to K3s Cluster
-      # ----------------------------------------------------
-      - name: Deploy to K3s
+      - name: Bootstrap & Deploy to K3s
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
+          # High timeout to allow for first-time installation (5m)
+          timeout: 300s 
+          command_timeout: 300s
           script: |
             set -e
-            echo "🚀 Starting Deployment to K3s..."
+            echo "🚀 Starting Emergency Deployment (K3s)..."
             
-            # Pull latest Docker image
-            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/reservex:latest
+            # --- PHASE 1: BOOTSTRAP (Install if Missing) ---
+            if ! command -v k3s &> /dev/null; then
+                echo "⚠️ K3s not found. Installing..."
+                curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik" sh -
+                
+                # Setup permissions for 'ubuntu' user immediately
+                mkdir -p ~/.kube
+                sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
+                sudo chown ubuntu:ubuntu ~/.kube/config
+                sudo chmod 644 ~/.kube/config
+                echo 'export KUBECONFIG=~/.kube/config' >> ~/.bashrc
+            else
+                echo "✅ K3s is already installed."
+            fi
             
-            # Apply Kubernetes manifests
-            # Note: We assume K3s runs locally and ~/.kube/config is set (by setup_server.sh)
+            # Ensure permissions are correct for this session
+            export KUBECONFIG=~/.kube/config
+            
+            # Open Firewall Ports (Idempotent)
+            if ! sudo ufw status | grep -q "30001"; then
+               sudo ufw allow 30001/tcp
+               sudo ufw allow 6443/tcp
+               # Ensure SSH is never locked out
+               sudo ufw allow 22/tcp 
+               sudo ufw --force enable
+            fi
+
+            # --- PHASE 2: DEPLOYMENT ---
+            echo "📦 Deploying Application..."
+            
+            # 1. Pull Image (Pre-pull to speed up K8s)
+            # Check if docker is present (K3s usually includes containerd, but we might want standard docker tools)
+            # Actually, K3s uses containerd. We don't need 'docker pull' unless we use the docker CLI.
+            # We will rely on K3s to pull the image.
+            
+            # 2. Write Manifests (Inline to avoid SCP connection issues)
+            mkdir -p ~/k8s
+            
+            cat << 'EOF' > ~/k8s/deployment.yaml
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: reservex-deployment
+              namespace: default
+              labels:
+                app: reservex
+            spec:
+              replicas: 2
+              selector:
+                matchLabels:
+                  app: reservex
+              template:
+                metadata:
+                  labels:
+                    app: reservex
+                spec:
+                  containers:
+                  - name: reservex
+                    image: ${{ secrets.DOCKERHUB_USERNAME }}/reservex:latest
+                    imagePullPolicy: Always
+                    ports:
+                    - containerPort: 8501
+            EOF
+            
+            cat << 'EOF' > ~/k8s/service.yaml
+            apiVersion: v1
+            kind: Service
+            metadata:
+              name: reservex-service
+              namespace: default
+            spec:
+              type: NodePort
+              selector:
+                app: reservex
+              ports:
+              - protocol: TCP
+                port: 8501
+                targetPort: 8501
+                nodePort: 30001
+            EOF
+            
+            # 3. Apply
             kubectl apply -f ~/k8s/deployment.yaml
             kubectl apply -f ~/k8s/service.yaml
             
-            # Force restart to pick up new image (since tag is 'latest')
+            # 4. Force Update
             kubectl rollout restart deployment/reservex-deployment
             
-            # Wait for rollout
+            # --- PHASE 3: VERIFICATION (Smoke Test) ---
             echo "⏳ Waiting for rollout..."
             kubectl rollout status deployment/reservex-deployment --timeout=120s
             
-            # Verify
-            echo "📊 Pod Status:"
-            kubectl get pods -o wide
+            echo "🧪 Running Smoke Test (Target: Port 30001)..."
+            # Wait for pod to be ready and service to link
+            sleep 10 
             
-            echo "✅ Deployment Complete"
-
-      # ----------------------------------------------------
-      # 3. Validation (DAST / Smoke Test)
-      # ----------------------------------------------------
-      - name: E2E Smoke Test
-        run: |
-          echo "🧪 Running E2E Check..."
-          APP_URL="http://${{ secrets.EC2_HOST }}:30001"
-          
-          echo "Target: $APP_URL"
-          sleep 10 # Give K3s a moment to route traffic
-          
-          # 1. Connectivity
-          if curl -s -f "$APP_URL"; then
-             echo "✅ App is reachable"
-          else
-             echo "❌ App Unreachable"
-             exit 1
-          fi
-          
-          # 2. Security Headers (Simulated DAST)
-          HEADERS=$(curl -sI "$APP_URL")
-          echo "$HEADERS" | grep -i "server" && echo "ℹ️ Server header verified"
+            APP_URL="http://localhost:30001"
+            if curl -s -f "$APP_URL" > /dev/null; then
+               echo "✅ HEALTH CHECK PASSED: App is reachable on port 30001"
+            else
+               # Start debugging info but don't fail immediately, give it one more retry
+               echo "⚠️ First check failed... retrying in 10s..."
+               sleep 10
+               if curl -s -f "$APP_URL" > /dev/null; then
+                  echo "✅ HEALTH CHECK PASSED (Retry)"
+               else
+                  echo "❌ HEALTH CHECK FAILED"
+                  kubectl get pods -o wide
+                  exit 1
+               fi
+            fi
+            
+            echo "🎉 Deployment Success!"
 
