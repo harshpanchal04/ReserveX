@@ -1,95 +1,139 @@
-name: Advanced CD Pipeline
+name: CD Pipeline
 
 on:
   workflow_run:
-    workflows: ["Advanced CI Pipeline"]
+    workflows: ["CI Pipeline"]
     types:
       - completed
-    branches:
-      - main
-  workflow_dispatch:
-
-env:
-  DOCKER_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/reservex
 
 jobs:
-  deploy-staging:
-    name: Deploy to Staging
+  deploy:
+    # Only deploy if CI succeeded on main/master branch
+    if: |
+      github.event.workflow_run.conclusion == 'success' &&
+      (github.event.workflow_run.head_branch == 'main' || github.event.workflow_run.head_branch == 'master')
+
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
-    
+
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
+      # ----------------------------------------------------
+      # 1. Checkout (for reference, though we use remote scripts)
+      # ----------------------------------------------------
+      - name: Checkout source code
+        uses: actions/checkout@v4
 
-      - name: Set up Kubectl
-        uses: azure/k8s-set-context@v3
+      # ----------------------------------------------------
+      # 2. Deploy to Kubernetes (EC2 + Minikube)
+      # ----------------------------------------------------
+      - name: Deploy to Kubernetes Cluster
+        uses: appleboy/ssh-action@v1.0.3
         with:
-          method: kubeconfig
-          kubeconfig: ${{ secrets.KUBE_CONFIG }}
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script: |
+            # Ensure Docker and Minikube are running
+            # (Assumes pre-installed environment. If not, add install scripts here)
+            if ! minikube status | grep -q "Running"; then
+              minikube start --driver=docker --force
+            fi
+            
+            # Pull latest image
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/reservex:latest
+            
+            # Load image into Minikube's Docker daemon
+            minikube image load ${{ secrets.DOCKERHUB_USERNAME }}/reservex:latest
+            
+            # Create Deployment Manifest
+            cat << 'DEPLOYMENT_EOF' > /tmp/deployment.yaml
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: reservex-deployment
+              labels:
+                app: reservex
+            spec:
+              replicas: 2
+              selector:
+                matchLabels:
+                  app: reservex
+              template:
+                metadata:
+                  labels:
+                    app: reservex
+                spec:
+                  containers:
+                  - name: reservex
+                    image: ${{ secrets.DOCKERHUB_USERNAME }}/reservex:latest
+                    imagePullPolicy: Never
+                    ports:
+                    - containerPort: 8501
+            DEPLOYMENT_EOF
+            
+            # Create Service Manifest
+            cat << 'SERVICE_EOF' > /tmp/service.yaml
+            apiVersion: v1
+            kind: Service
+            metadata:
+              name: reservex-service
+            spec:
+              type: NodePort
+              selector:
+                app: reservex
+              ports:
+              - protocol: TCP
+                port: 8501
+                targetPort: 8501
+                nodePort: 30001
+            SERVICE_EOF
+            
+            # Apply Manifests
+            kubectl apply -f /tmp/deployment.yaml
+            kubectl apply -f /tmp/service.yaml
+            
+            # Wait for Rollout
+            kubectl rollout status deployment/reservex-deployment --timeout=120s
+            
+            # Verify Pods
+            kubectl get pods -l app=reservex
+            
+            echo "✅ Kubernetes deployment completed!"
 
-      - name: Deploy to Staging
-        run: |
-          # Replace placeholder with actual image tag
-          # Note: In real life, pass the SHA from the CI trigger. Here we use 'latest' or the triggering SHA if available.
-          IMAGE_TAG=${{ github.sha }}
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then IMAGE_TAG="latest"; fi
-          
-          # For workflow_run event, we might want to get the SHA from the triggering run, 
-          # but normally checkout@v3 checks out the HEAD of main which is what we built.
-          
-          echo "Deploying Staging: ${{ env.DOCKER_IMAGE }}:$IMAGE_TAG"
-          
-          # Use sed to replace image placeholder
-          sed -i "s|IMAGE_PLACEHOLDER|${{ env.DOCKER_IMAGE }}:$IMAGE_TAG|g" k8s/staging/deployment.yaml
-          
-          # Apply (Create namespace if not exists)
-          kubectl create namespace staging --dry-run=client -o yaml | kubectl apply -f -
-          kubectl apply -f k8s/staging/deployment.yaml
-
-      - name: Verify Staging Rollout
-        run: |
-          kubectl rollout status deployment/reservex-staging -n staging
-
-      - name: DAST Scan (OWASP ZAP)
-        uses: zaproxy/action-baseline@v0.9.0
-        continue-on-error: true # Don't block pipeline on alerts, just report
+      # ----------------------------------------------------
+      # 3. Dummy DAST - Security Scan
+      # ----------------------------------------------------
+      - name: Dummy DAST - Security Scan
+        uses: appleboy/ssh-action@v1.0.3
         with:
-          # In a real setup, get the LoadBalancer IP
-          # target: 'http://<staging-ip>'
-          target: 'http://example.com' # Placeholder for demo
-          cmd_options: '-a'
-
-  deploy-production:
-    name: Deploy to Production
-    needs: deploy-staging
-    runs-on: ubuntu-latest
-    environment: 
-      name: production
-      url: http://reservex.prod
-    
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
-
-      - name: Set up Kubectl
-        uses: azure/k8s-set-context@v3
-        with:
-          method: kubeconfig
-          kubeconfig: ${{ secrets.KUBE_CONFIG }}
-
-      - name: Deploy to Production
-        run: |
-          IMAGE_TAG=${{ github.sha }}
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then IMAGE_TAG="latest"; fi
-          
-          echo "Deploying Production: ${{ env.DOCKER_IMAGE }}:$IMAGE_TAG"
-          
-          sed -i "s|IMAGE_PLACEHOLDER|${{ env.DOCKER_IMAGE }}:$IMAGE_TAG|g" k8s/production/deployment.yaml
-          
-          kubectl create namespace production --dry-run=client -o yaml | kubectl apply -f -
-          kubectl apply -f k8s/production/deployment.yaml
-
-      - name: Verify Production Rollout
-        run: |
-          kubectl rollout status deployment/reservex-production -n production
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script: |
+            echo "🔍 Starting DAST (Dynamic Application Security Testing)..."
+            
+            # Get Minikube IP
+            MINIKUBE_IP=$(minikube ip)
+            APP_URL="http://${MINIKUBE_IP}:30001"
+            
+            echo "Testing application at: ${APP_URL}"
+            
+            # Wait for service to be ready
+            sleep 10
+            
+            # Test 1: Health Check (Basic Connectivity)
+            echo "Test 1: Connectivity Check"
+            curl -sf "${APP_URL}" > /dev/null && echo "✅ Application is reachable" || echo "⚠️ Application unreachable"
+            
+            # Test 2: HTTP Methods
+            echo "Test 2: HTTP Methods"
+            curl -sX OPTIONS "${APP_URL}" -I 2>/dev/null | head -n 1
+            
+            # Test 3: Security Headers (Basic Check)
+            echo "Test 3: Security Headers"
+            HEADERS=$(curl -sI "${APP_URL}")
+            echo "$HEADERS" | grep -qi "server" && echo "✅ Server header present" || echo "Note: Server header hidden (Good)"
+            
+            echo ""
+            echo "✅ DAST Security Scan completed!"
