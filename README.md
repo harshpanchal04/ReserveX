@@ -1,127 +1,219 @@
-# ReserveX (Train Surfer)
+# 🚂 ReserveX (Train Surfer)
 
-ReserveX (also known as Train Surfer) is a powerful Python-based tool designed to help Indian Railways passengers find vacant seats on trains when direct tickets are unavailable. It leverages advanced web scraping and algorithmic optimization to discover "hidden" vacancies and construct "Hacker Chains"—optimal seat-hopping itineraries that cover the entire journey.
+[![CI Pipeline](https://github.com/harshpanchal04/ReserveX/actions/workflows/ci.yml/badge.svg)](https://github.com/harshpanchal04/ReserveX/actions/workflows/ci.yml)
+[![CD Pipeline](https://github.com/harshpanchal04/ReserveX/actions/workflows/cd.yml/badge.svg)](https://github.com/harshpanchal04/ReserveX/actions/workflows/cd.yml)
+[![Docker Image](https://img.shields.io/docker/v/harshpanchal04/reservex?label=DockerHub&logo=docker)](https://hub.docker.com/r/harshpanchal04/reservex)
 
-## 🚀 Key Features
+**ReserveX** is a Python-based tool that helps Indian Railways passengers find vacant seats when direct tickets are unavailable. It discovers "hidden" vacancies and constructs **Hacker Chains**—optimal seat-hopping itineraries that cover your entire journey.
 
-*   **Smart Vacancy Scanning**: Uses **Playwright** to intercept internal IRCTC APIs (`coachComposition`), allowing it to scan every coach (S1, S2, B1, etc.) for partial vacancies that are often invisible on standard booking portals.
-*   **Hacker Chain Algorithm**: A greedy algorithm that stitches together multiple partial vacancies to create a complete journey. It minimizes seat swaps to ensure maximum comfort.
-*   **Visual Timeline**: A beautiful, interactive visual representation of your journey, showing exactly where you need to swap seats and what the intermediate stations are.
-*   **PDF Ticket Generation**: Generates a professional-looking PDF itinerary for your "Hacker Chain" or single seat, ready for offline reference.
-*   **Comfort Filters**: Filter results by berth type (Lower, Side Lower, AC, etc.) to find the most comfortable option.
-*   **Robust & Stealthy**: Implements "Fake Headless" browsing and other stealth techniques to bypass anti-bot protections and ensure reliable data fetching.
+---
+
+## ✨ Key Features
+
+| Feature | Description |
+|---------|-------------|
+| 🔍 **Smart Vacancy Scanning** | Intercepts IRCTC's internal `coachComposition` API to find partial vacancies |
+| 🔗 **Hacker Chain Algorithm** | Greedy algorithm that stitches multiple partial vacancies into a complete journey |
+| 📊 **Visual Timeline** | Interactive visualization showing exactly where to swap seats |
+| 📄 **PDF Generation** | Downloadable itinerary for offline reference |
+| ⚙️ **Stealth Mode** | Fake-headless browsing to bypass anti-bot protections |
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+- Python 3.8+
+- Google Chrome or Chromium
+
+### Installation
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/harshpanchal04/ReserveX.git
+cd ReserveX
+
+# 2. Create virtual environment
+python -m venv venv
+
+# Windows
+.\venv\Scripts\activate
+
+# Linux/Mac
+source venv/bin/activate
+
+# 3. Install dependencies
+pip install -r requirements.txt
+
+# 4. Install Playwright browsers
+playwright install chromium
+
+# 5. Run the application
+streamlit run app.py
+```
+
+### Using Docker
+
+```bash
+# Pull the image
+docker pull harshpanchal04/reservex:latest
+
+# Run the container
+docker run -p 8501:8501 harshpanchal04/reservex:latest
+
+# Access at http://localhost:8501
+```
+
+---
 
 ## 🛠️ Technical Architecture
 
-### 1. Route Discovery (`scraper.py`)
-*   **Function**: `get_train_route(train_no)`
-*   **Logic**: Launches a browser instance to scrape the official station list and distances for the given train.
-*   **Fallback**: Includes hardcoded fallback data for popular trains (e.g., Karnataka Express) to ensure functionality even if the route page is slow or unresponsive.
+### Core Components
 
-### 2. Vacancy Scanning (`scraper.py`)
-*   **Function**: `scan_vacancies(...)`
-*   **Technique**: API Interception. Instead of scraping the DOM (which is slow and brittle), the tool intercepts the `coachComposition` JSON response from the server.
-*   **Data Extracted**: Coach number, Berth number, Berth type (LB, UB, etc.), and the specific "From" and "To" stations for each vacant segment.
+| File | Purpose |
+|------|---------|
+| `app.py` | Streamlit web application entry point |
+| `scraper.py` | Playwright browser automation & API interception |
+| `solver.py` | Optimization algorithms for seat finding |
+| `utils.py` | PDF generation & visualization helpers |
+| `Dockerfile` | Container definition (Playwright base image) |
 
-### 3. Optimization Engine (`solver.py`)
-*   **Single Seat Optimization**: Filters vacancies based on user preferences (AC only, Lower Berth only) and sorts them by coverage distance.
-*   **Hacker Chain Logic**:
-    1.  Identifies all "Starting Seats" that cover the boarding station.
-    2.  Uses a **Greedy Algorithm** to find the next best seat that overlaps with the current seat and extends the journey furthest towards the destination.
-    3.  Repeats until the destination is reached or no valid connection is found.
+### Technology Stack
 
-### 4. User Interface (`app.py`)
-*   Built with **Streamlit** for a responsive and interactive web-based UI.
-*   Manages session state to persist data between reruns (route data, scan results).
-*   Integrates `matplotlib` (implied) or custom HTML/CSS for visual timelines.
+| Layer | Technology |
+|-------|------------|
+| Frontend | Streamlit |
+| Backend | Python 3.10 |
+| Web Scraping | Playwright |
+| Containerization | Docker |
+| Orchestration | Kubernetes (K3s) |
+| Cloud | AWS EC2 |
 
-## 📦 Installation
-
-### Prerequisites
-*   **Python 3.8+**
-*   **Google Chrome** (or Chromium) installed on your system.
-
-### Setup
-1.  **Clone the Repository**
-    ```bash
-    git clone https://github.com/harshpanchal04/ReserveX.git
-    cd ReserveX
-    ```
-
-2.  **Create a Virtual Environment** (Recommended)
-    ```bash
-    python -m venv venv
-    # Windows
-    .\venv\Scripts\activate
-    # Mac/Linux
-    source venv/bin/activate
-    ```
-
-3.  **Install Dependencies**
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-4.  **Install Playwright Browsers**
-    ```bash
-    playwright install chromium
-    ```
-
-## 🖥️ Usage
-
-1.  **Run the Application**
-    ```bash
-    streamlit run app.py
-    ```
-
-2.  **Workflow**
-    *   **Step 1**: Enter the **Train Number** (e.g., 12627) and **Journey Date** in the sidebar. Click "Fetch Route".
-    *   **Step 2**: Select your **Boarding** and **Destination** stations from the main dropdowns.
-    *   **Step 3**: Click "Find Seats". The tool will open a browser (in the background or visible if Developer Mode is on) and scan the train.
-    *   **Step 4**: View the results!
-        *   **Best Single Seat**: The longest continuous seat available.
-        *   **Hacker Chain**: A combination of seats to cover the full trip.
-    *   **Step 5**: Download your **PDF Ticket** for easy reference.
+---
 
 ## 🔄 CI/CD Pipeline
 
 This project implements a production-grade **DevSecOps** pipeline using GitHub Actions.
 
-### 1. Continuous Integration (CI)
-Every push to `master` triggers:
--   **Linting**: `flake8` checks for code style compliance.
--   **Security Scans**:
-    -   **SAST**: `CodeQL` performs deep semantic code analysis.
-    -   **SCA**: `OWASP Dependency Check` validates libraries.
--   **Build Verification**: A "Smoke Test" runs the container to ensure startup reliability.
--   **Unit Tests**: `pytest` validates core logic (mocking external APIs).
--   **Containerization**: Builds a Docker image.
--   **Image Scanning**: `trivy` scans the Docker image for OS/library vulnerabilities.
--   **Registry Push**: Pushes safe images to DockerHub.
+### Pipeline Overview
 
-### 2. Continuous Deployment (CD)
--   **Simulated Production**: Automated deployment to an **AWS EC2** instance running **K3s (Lightweight Kubernetes)**.
--   **Mechanism**: Uses `SCP` to transfer manifests and `SSH` to apply them.
--   **Zero-Downtime**: Leverages Kubernetes Rolling Updates.
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     CI PIPELINE (10 Stages)                 │
+├─────────────────────────────────────────────────────────────┤
+│ Checkout → Setup → Lint → SAST → SCA → Test → Build →     │
+│ Smoke Test → Image Scan → Push to Registry                  │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                     CD PIPELINE (5 Stages)                  │
+├─────────────────────────────────────────────────────────────┤
+│ SSH Connect → Bootstrap K3s → Apply Manifests →            │
+│ Rolling Update → Health Check                               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### CI Stages
+
+| Stage | Tool | Purpose |
+|-------|------|---------|
+| **Linting** | Flake8 | PEP8 code style compliance |
+| **SAST** | CodeQL | Static security analysis |
+| **SCA** | OWASP Dependency Check | Dependency vulnerability scanning |
+| **Unit Tests** | Pytest | Functional testing |
+| **Smoke Test** | curl | Container startup verification |
+| **Image Scan** | Trivy | Container vulnerability scanning |
+
+### CD Stages
+
+| Stage | Tool | Purpose |
+|-------|------|---------|
+| **SSH Connect** | appleboy/ssh-action | Remote server access |
+| **Bootstrap** | K3s installer | Kubernetes installation (if needed) |
+| **Apply Manifests** | kubectl | Deploy to Kubernetes |
+| **Health Check** | curl | Production verification |
+
+📖 **Detailed architecture documentation**: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+
+---
 
 ## 🔐 Secrets Configuration
-The pipeline requires the following GitHub Secrets:
-*   `DOCKERHUB_USERNAME`: Your DockerHub username.
-*   `DOCKERHUB_TOKEN`: DockerHub Access Token.
-*   `EC2_HOST`: Public IP address of the deployment server.
-*   `EC2_SSH_KEY`: Private SSH Key (.pem content) for server access.
 
-[![CI Status](https://github.com/harshpanchal04/ReserveX/actions/workflows/ci.yml/badge.svg)](https://github.com/harshpanchal04/ReserveX/actions/workflows/ci.yml)
+Configure these secrets in **GitHub Repository Settings → Secrets → Actions**:
 
-## 📂 File Structure
+| Secret Name | Description | How to Obtain |
+|-------------|-------------|---------------|
+| `DOCKERHUB_USERNAME` | DockerHub username | Your DockerHub account username |
+| `DOCKERHUB_TOKEN` | DockerHub access token | DockerHub → Account Settings → Security → New Access Token |
+| `EC2_HOST` | EC2 public IP address | AWS Console → EC2 → Instances → Public IPv4 |
+| `EC2_SSH_KEY` | SSH private key content | Content of your `.pem` file (including headers) |
 
-*   `app.py`: Main Streamlit application entry point.
-*   `scraper.py`: Core logic for browser automation and data extraction using Playwright.
-*   `solver.py`: Algorithms for processing raw vacancy data and finding optimal chains.
-*   `utils.py`: Helper functions for PDF generation (`fpdf`) and HTML visualization.
-*   `vacancy_finder.py`: A standalone CLI version of the tool (useful for testing/debugging without UI).
-*   `requirements.txt`: List of Python dependencies.
+---
+
+## 📁 Project Structure
+
+```
+ReserveX/
+├── .github/
+│   └── workflows/
+│       ├── ci.yml              # CI pipeline definition
+│       └── cd.yml              # CD pipeline definition
+├── docs/
+│   ├── ARCHITECTURE.md         # Visual architecture documentation
+│   └── K8S_SETUP.md           # Kubernetes setup guide
+├── k8s/
+│   ├── deployment.yaml         # K8s Deployment manifest
+│   └── service.yaml            # K8s Service manifest
+├── tests/
+│   └── test_solver.py          # Unit tests for solver.py
+├── app.py                      # Streamlit application
+├── scraper.py                  # Playwright automation
+├── solver.py                   # Optimization algorithms
+├── utils.py                    # Helper functions
+├── Dockerfile                  # Container definition
+├── requirements.txt            # Python dependencies
+├── PROJECT_REPORT.md           # Detailed project report
+└── README.md                   # This file
+```
+
+---
+
+## 🖥️ Usage Guide
+
+1. **Enter Train Details**: Input the train number (e.g., 12627) and journey date
+2. **Fetch Route**: Click "Fetch Route" to load station list
+3. **Select Stations**: Choose boarding and destination stations
+4. **Find Seats**: Click "Find Seats" to scan for vacancies
+5. **View Results**:
+   - **Best Single Seat**: Longest continuous seat available
+   - **Hacker Chain**: Combination of seats covering full trip
+6. **Download PDF**: Save your itinerary for reference
+
+---
+
+## 🌐 Accessing the Deployed Application
+
+Once CD pipeline completes successfully:
+
+```
+http://<EC2-PUBLIC-IP>:30001
+```
+
+Replace `<EC2-PUBLIC-IP>` with your EC2 instance's public IPv4 address.
+
+---
 
 ## ⚠️ Disclaimer
 
 This tool is for **informational purposes only**. It helps you find available seats, but it **does not book tickets**. You must book the corresponding segments on the official IRCTC website or app. Use responsibly and adhere to IRCTC's terms of service.
+
+---
+
+## 📄 License
+
+This project is for educational purposes as part of an Advanced DevOps course.
+
+---
+
+*Built with ❤️ using Python, Streamlit, and Kubernetes*
