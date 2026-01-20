@@ -91,17 +91,25 @@ This project implements a production-grade **DevSecOps** pipeline using GitHub A
 Every push to `master` triggers:
 -   **Linting**: `flake8` checks for code style compliance.
 -   **Security Scans**:
-    -   **SAST**: `bandit` scans Python code for vulnerabilities.
-    -   **SCA**: `safety` checks dependencies for known CVEs.
+    -   **SAST**: `CodeQL` performs deep semantic code analysis.
+    -   **SCA**: `OWASP Dependency Check` validates libraries.
+-   **Build Verification**: A "Smoke Test" runs the container to ensure startup reliability.
 -   **Unit Tests**: `pytest` validates core logic (mocking external APIs).
 -   **Containerization**: Builds a Docker image.
 -   **Image Scanning**: `trivy` scans the Docker image for OS/library vulnerabilities.
 -   **Registry Push**: Pushes safe images to DockerHub.
 
 ### 2. Continuous Deployment (CD)
-Automated deployment to Kubernetes:
--   **Staging**: Deploys to `staging` namespace -> Runs **DAST** (OWASP ZAP).
--   **Production**: Deploys to `production` namespace (Requires Manual Approval).
+-   **Simulated Production**: Automated deployment to an **AWS EC2** instance running **K3s (Lightweight Kubernetes)**.
+-   **Mechanism**: Uses `SCP` to transfer manifests and `SSH` to apply them.
+-   **Zero-Downtime**: Leverages Kubernetes Rolling Updates.
+
+## 🔐 Secrets Configuration
+The pipeline requires the following GitHub Secrets:
+*   `DOCKERHUB_USERNAME`: Your DockerHub username.
+*   `DOCKERHUB_TOKEN`: DockerHub Access Token.
+*   `EC2_HOST`: Public IP address of the deployment server.
+*   `EC2_SSH_KEY`: Private SSH Key (.pem content) for server access.
 
 [![CI Status](https://github.com/harshpanchal04/ReserveX/actions/workflows/ci.yml/badge.svg)](https://github.com/harshpanchal04/ReserveX/actions/workflows/ci.yml)
 

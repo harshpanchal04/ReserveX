@@ -1,31 +1,44 @@
-name: CD Pipeline
+name: CD Pipeline - K3s
 
 on:
   workflow_run:
     workflows: ["CI Pipeline"]
     types:
       - completed
+  workflow_dispatch:
 
 jobs:
   deploy:
-    # Only deploy if CI succeeded on main/master branch
-    if: |
-      github.event.workflow_run.conclusion == 'success' &&
-      (github.event.workflow_run.head_branch == 'main' || github.event.workflow_run.head_branch == 'master')
-
+    name: Deploy to EC2 (K3s)
     runs-on: ubuntu-latest
-
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    
     steps:
-      # ----------------------------------------------------
-      # 1. Checkout (for reference, though we use remote scripts)
-      # ----------------------------------------------------
-      - name: Checkout source code
+      - name: Checkout Code
         uses: actions/checkout@v4
 
       # ----------------------------------------------------
-      # 2. Deploy to Kubernetes (EC2 + Minikube)
+      # 1. Setup SSH & Copy Manifests
       # ----------------------------------------------------
-      - name: Deploy to Kubernetes Cluster
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Copy Kubernetes Manifests
+        run: |
+          # Create target directory on server
+          ssh -i ~/.ssh/id_rsa  -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} "mkdir -p ~/k8s"
+          # Copy all yaml files
+          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no k8s/*.yaml ubuntu@${{ secrets.EC2_HOST }}:~/k8s/
+
+      # ----------------------------------------------------
+      # 2. Deploy to K3s Cluster
+      # ----------------------------------------------------
+      - name: Deploy to K3s
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -33,159 +46,50 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
           script: |
-            # ----------------------------------------------------------------
-            # 1. Dependency Check & Installation (Bootstrap)
-            # ----------------------------------------------------------------
-            echo "🛠️ Checking/Installing Dependencies..."
+            set -e
+            echo "🚀 Starting Deployment to K3s..."
             
-            # Install Docker if missing
-            if ! command -v docker &> /dev/null; then
-                echo "Installing Docker..."
-                curl -fsSL https://get.docker.com -o get-docker.sh
-                sudo sh get-docker.sh
-                sudo usermod -aG docker ubuntu
-                sudo systemctl enable docker
-                sudo systemctl start docker
-                # Creating a new group membership requires a re-login to take effect in the current shell
-                # We use 'newgrp docker' for the current session or run commands with 'sg'
-            fi
-
-            # Install Minikube if missing
-            if ! command -v minikube &> /dev/null; then
-                echo "Installing Minikube..."
-                curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
-                sudo install minikube-linux-amd64 /usr/local/bin/minikube
-            fi
-
-            # Install Kubectl if missing
-            if ! command -v kubectl &> /dev/null; then
-                echo "Installing Kubectl..."
-                curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-                sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
-            fi
-
-            # ----------------------------------------------------------------
-            # 2. Start Services
-            # ----------------------------------------------------------------
-            # Ensure group membership applies to current session commands
-            # Using 'sg' to execute minikube commands as 'docker' group member
+            # Pull latest Docker image
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/reservex:latest
             
-            # Start Minikube
-            if ! sg docker -c "minikube status" | grep -q "Running"; then
-              sg docker -c "minikube start --driver=docker --force"
-            fi
+            # Apply Kubernetes manifests
+            # Note: We assume K3s runs locally and ~/.kube/config is set (by setup_server.sh)
+            kubectl apply -f ~/k8s/deployment.yaml
+            kubectl apply -f ~/k8s/service.yaml
             
-            # Pull latest image
-            sg docker -c "docker pull ${{ secrets.DOCKERHUB_USERNAME }}/reservex:latest"
+            # Force restart to pick up new image (since tag is 'latest')
+            kubectl rollout restart deployment/reservex-deployment
             
-            # Load image into Minikube's Docker daemon
-            sg docker -c "minikube image load ${{ secrets.DOCKERHUB_USERNAME }}/reservex:latest"
+            # Wait for rollout
+            echo "⏳ Waiting for rollout..."
+            kubectl rollout status deployment/reservex-deployment --timeout=120s
             
-            # Create Deployment Manifest
-            cat << 'DEPLOYMENT_EOF' > /tmp/deployment.yaml
-            apiVersion: apps/v1
-            kind: Deployment
-            metadata:
-              name: reservex-deployment
-              labels:
-                app: reservex
-            spec:
-              replicas: 2
-              selector:
-                matchLabels:
-                  app: reservex
-              template:
-                metadata:
-                  labels:
-                    app: reservex
-                spec:
-                  containers:
-                  - name: reservex
-                    image: ${{ secrets.DOCKERHUB_USERNAME }}/reservex:latest
-                    imagePullPolicy: Never
-                    ports:
-                    - containerPort: 8501
-            DEPLOYMENT_EOF
+            # Verify
+            echo "📊 Pod Status:"
+            kubectl get pods -o wide
             
-            # Create Service Manifest
-            cat << 'SERVICE_EOF' > /tmp/service.yaml
-            apiVersion: v1
-            kind: Service
-            metadata:
-              name: reservex-service
-            spec:
-              type: NodePort
-              selector:
-                app: reservex
-              ports:
-              - protocol: TCP
-                port: 8501
-                targetPort: 8501
-                nodePort: 30001
-            SERVICE_EOF
-            
-            # Apply Manifests
-            sg docker -c "kubectl apply -f /tmp/deployment.yaml"
-            sg docker -c "kubectl apply -f /tmp/service.yaml"
-            
-            # Wait for Rollout
-            sg docker -c "kubectl rollout status deployment/reservex-deployment --timeout=120s"
-            
-            # ----------------------------------------------------------------
-            # CRITICAL FIX: Expose Minikube Service to EC2 Host (0.0.0.0)
-            # Minikube Docker drive isolates the network. We must port-forward
-            # to make it accessible from the internet.
-            # ----------------------------------------------------------------
-            echo "🔌 Setting up Port Forwarding..."
-            # Kill any existing port-forward protocols on 30001 to prevent conflicts
-            pkill -f "kubectl port-forward" || true
-            
-            # Run port-forward in background (nohup) so it stays alive after SSH disconnects
-            # Note: We use 'sg docker' here too just in case kubectl needs docker socket access (depends on driver)
-            nohup sg docker -c "kubectl port-forward --address 0.0.0.0 service/reservex-service 30001:8501" > /dev/null 2>&1 &
-            
-            # Give it a moment to bind
-            sleep 5
-            
-            # Verify Pods
-            sg docker -c "kubectl get pods -l app=reservex"
-            
-            echo "✅ Kubernetes deployment completed!"
+            echo "✅ Deployment Complete"
 
       # ----------------------------------------------------
-      # 3. Dummy DAST - Security Scan
+      # 3. Validation (DAST / Smoke Test)
       # ----------------------------------------------------
-      - name: Dummy DAST - Security Scan
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ubuntu
-          key: ${{ secrets.EC2_SSH_KEY }}
-          port: 22
-          script: |
-            echo "🔍 Starting DAST (Dynamic Application Security Testing)..."
-            
-            # Get Minikube IP
-            MINIKUBE_IP=$(minikube ip)
-            APP_URL="http://${MINIKUBE_IP}:30001"
-            
-            echo "Testing application at: ${APP_URL}"
-            
-            # Wait for service to be ready
-            sleep 10
-            
-            # Test 1: Health Check (Basic Connectivity)
-            echo "Test 1: Connectivity Check"
-            curl -sf "${APP_URL}" > /dev/null && echo "✅ Application is reachable" || echo "⚠️ Application unreachable"
-            
-            # Test 2: HTTP Methods
-            echo "Test 2: HTTP Methods"
-            curl -sX OPTIONS "${APP_URL}" -I 2>/dev/null | head -n 1
-            
-            # Test 3: Security Headers (Basic Check)
-            echo "Test 3: Security Headers"
-            HEADERS=$(curl -sI "${APP_URL}")
-            echo "$HEADERS" | grep -qi "server" && echo "✅ Server header present" || echo "Note: Server header hidden (Good)"
-            
-            echo ""
-            echo "✅ DAST Security Scan completed!"
+      - name: E2E Smoke Test
+        run: |
+          echo "🧪 Running E2E Check..."
+          APP_URL="http://${{ secrets.EC2_HOST }}:30001"
+          
+          echo "Target: $APP_URL"
+          sleep 10 # Give K3s a moment to route traffic
+          
+          # 1. Connectivity
+          if curl -s -f "$APP_URL"; then
+             echo "✅ App is reachable"
+          else
+             echo "❌ App Unreachable"
+             exit 1
+          fi
+          
+          # 2. Security Headers (Simulated DAST)
+          HEADERS=$(curl -sI "$APP_URL")
+          echo "$HEADERS" | grep -i "server" && echo "ℹ️ Server header verified"
+
