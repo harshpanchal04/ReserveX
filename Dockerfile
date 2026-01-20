@@ -15,11 +15,12 @@ COPY requirements.txt .
 
 # Upgrade pip and setuptools to ensure smooth installation
 # Then install dependencies
-# Finally, uninstall setuptools to remove the bundled jaraco.context vulnerability (GHSA-58pv-8j8x-9vj2)
-# as it is a build-time dependency not required for runtime.
+# Finally, uninstall setuptools and virtualenv to remove the bundled jaraco.context vulnerability
+# and clean up cached wheels in /root/.local which Trivy triggers on.
 RUN pip install --no-cache-dir --upgrade pip setuptools && \
     pip install --no-cache-dir -r requirements.txt && \
-    pip uninstall -y setuptools
+    pip uninstall -y setuptools virtualenv && \
+    rm -rf /root/.local
 
 # Copy the rest of the application
 COPY . .
