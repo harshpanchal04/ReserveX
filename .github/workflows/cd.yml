@@ -33,17 +33,53 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
           script: |
-            # Ensure Docker and Minikube are running
-            # (Assumes pre-installed environment. If not, add install scripts here)
-            if ! minikube status | grep -q "Running"; then
-              minikube start --driver=docker --force
+            # ----------------------------------------------------------------
+            # 1. Dependency Check & Installation (Bootstrap)
+            # ----------------------------------------------------------------
+            echo "🛠️ Checking/Installing Dependencies..."
+            
+            # Install Docker if missing
+            if ! command -v docker &> /dev/null; then
+                echo "Installing Docker..."
+                curl -fsSL https://get.docker.com -o get-docker.sh
+                sudo sh get-docker.sh
+                sudo usermod -aG docker ubuntu
+                sudo systemctl enable docker
+                sudo systemctl start docker
+                # Creating a new group membership requires a re-login to take effect in the current shell
+                # We use 'newgrp docker' for the current session or run commands with 'sg'
+            fi
+
+            # Install Minikube if missing
+            if ! command -v minikube &> /dev/null; then
+                echo "Installing Minikube..."
+                curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+                sudo install minikube-linux-amd64 /usr/local/bin/minikube
+            fi
+
+            # Install Kubectl if missing
+            if ! command -v kubectl &> /dev/null; then
+                echo "Installing Kubectl..."
+                curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+                sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+            fi
+
+            # ----------------------------------------------------------------
+            # 2. Start Services
+            # ----------------------------------------------------------------
+            # Ensure group membership applies to current session commands
+            # Using 'sg' to execute minikube commands as 'docker' group member
+            
+            # Start Minikube
+            if ! sg docker -c "minikube status" | grep -q "Running"; then
+              sg docker -c "minikube start --driver=docker --force"
             fi
             
             # Pull latest image
-            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/reservex:latest
+            sg docker -c "docker pull ${{ secrets.DOCKERHUB_USERNAME }}/reservex:latest"
             
             # Load image into Minikube's Docker daemon
-            minikube image load ${{ secrets.DOCKERHUB_USERNAME }}/reservex:latest
+            sg docker -c "minikube image load ${{ secrets.DOCKERHUB_USERNAME }}/reservex:latest"
             
             # Create Deployment Manifest
             cat << 'DEPLOYMENT_EOF' > /tmp/deployment.yaml
@@ -89,11 +125,11 @@ jobs:
             SERVICE_EOF
             
             # Apply Manifests
-            kubectl apply -f /tmp/deployment.yaml
-            kubectl apply -f /tmp/service.yaml
+            sg docker -c "kubectl apply -f /tmp/deployment.yaml"
+            sg docker -c "kubectl apply -f /tmp/service.yaml"
             
             # Wait for Rollout
-            kubectl rollout status deployment/reservex-deployment --timeout=120s
+            sg docker -c "kubectl rollout status deployment/reservex-deployment --timeout=120s"
             
             # ----------------------------------------------------------------
             # CRITICAL FIX: Expose Minikube Service to EC2 Host (0.0.0.0)
@@ -105,13 +141,14 @@ jobs:
             pkill -f "kubectl port-forward" || true
             
             # Run port-forward in background (nohup) so it stays alive after SSH disconnects
-            nohup kubectl port-forward --address 0.0.0.0 service/reservex-service 30001:8501 > /dev/null 2>&1 &
+            # Note: We use 'sg docker' here too just in case kubectl needs docker socket access (depends on driver)
+            nohup sg docker -c "kubectl port-forward --address 0.0.0.0 service/reservex-service 30001:8501" > /dev/null 2>&1 &
             
             # Give it a moment to bind
             sleep 5
             
             # Verify Pods
-            kubectl get pods -l app=reservex
+            sg docker -c "kubectl get pods -l app=reservex"
             
             echo "✅ Kubernetes deployment completed!"
 
